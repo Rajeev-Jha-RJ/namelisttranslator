@@ -109,8 +109,10 @@ namespace CsvTranslator
             string outputFile,
             string columnName,
             List<TranslationType> translationTypes,
+            int skipRows = 0,
+            int outputBatchSize = 1000,
+            int processingBatchSize = 50,
             bool includeJapaneseExtras = false,
-            int batchSize = 50,
             int delayBetweenBatchesMs = 1000)
         {
             var records = new List<dynamic>();
@@ -128,19 +130,32 @@ namespace CsvTranslator
                 records = csv.GetRecords<dynamic>().ToList();
             }
 
+            // Skip the specified number of rows
+            if (skipRows > 0)
+            {
+                if (skipRows >= records.Count)
+                {
+                    throw new ArgumentException($"Skip rows value ({skipRows}) is greater than or equal to the total number of records ({records.Count})");
+                }
+                records = records.Skip(skipRows).ToList();
+                Console.WriteLine($"Skipped {skipRows} rows. Processing remaining {records.Count} records...");
+            }
+
             Console.WriteLine($"Found {records.Count} records to process...");
+            Console.WriteLine($"Will create new output file every {outputBatchSize} records");
             Console.WriteLine("Progress: [" + new string('-', 50) + "]");
             Console.SetCursorPosition(0, Console.CursorTop - 1);
             Console.Write("Progress: [");
 
-            // Process records in batches
             var processedCount = 0;
             var progressBarPosition = Console.CursorTop;
             var progressBarLeft = Console.CursorLeft;
+            var currentBatchRecords = new List<dynamic>();
+            var fileCounter = 1;
 
-            for (int i = 0; i < records.Count; i += batchSize)
+            for (int i = 0; i < records.Count; i += processingBatchSize)
             {
-                var batch = records.Skip(i).Take(batchSize);
+                var batch = records.Skip(i).Take(processingBatchSize);
                 foreach (var record in batch)
                 {
                     var originalText = ((IDictionary<string, object>)record)[columnName]?.ToString();
@@ -151,7 +166,6 @@ namespace CsvTranslator
                             var translatedText = await TranslateTextAsync(originalText, translationType);
                             ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = translatedText;
 
-                            // Add extra Japanese processing for Japanese translations
                             if (includeJapaneseExtras && translationType == TranslationType.Japanese)
                             {
                                 var processedText = _japaneseProcessor.ProcessText(translatedText);
@@ -162,7 +176,28 @@ namespace CsvTranslator
                         }
                     }
 
+                    currentBatchRecords.Add(record);
                     processedCount++;
+
+                    // Write batch file when reaching outputBatchSize
+                    if (currentBatchRecords.Count >= outputBatchSize || processedCount == records.Count)
+                    {
+                        string batchFileName = Path.GetFileNameWithoutExtension(outputFile) + 
+                                             $"_batch{fileCounter}" +
+                                             Path.GetExtension(outputFile);
+                        string batchFilePath = Path.Combine(Path.GetDirectoryName(outputFile), batchFileName);
+
+                        using (var writer = new StreamWriter(batchFilePath))
+                        using (var csv = new CsvWriter(writer, config))
+                        {
+                            csv.WriteRecords(currentBatchRecords);
+                        }
+
+                        Console.SetCursorPosition(0, progressBarPosition + 2);
+                        Console.WriteLine($"Wrote batch file: {batchFileName} ({currentBatchRecords.Count} records)");
+                        currentBatchRecords.Clear();
+                        fileCounter++;
+                    }
 
                     // Update progress bar every 10 records
                     if (processedCount % 10 == 0 || processedCount == records.Count)
@@ -174,32 +209,25 @@ namespace CsvTranslator
                         Console.Write("] ");
                         Console.Write($"{(double)processedCount / records.Count:P0}");
                         
-                        // Show records processed
                         Console.SetCursorPosition(0, progressBarPosition + 1);
-                        Console.Write($"Records processed: {processedCount}/{records.Count}   ");
+                        Console.Write($"Records processed: {processedCount}/{records.Count} (Skipped: {skipRows})   ");
                     }
                 }
 
                 if (processedCount % 500 == 0)
                 {
-                    Console.SetCursorPosition(0, progressBarPosition + 2);
+                    Console.SetCursorPosition(0, progressBarPosition + 3);
                     await CheckQuotaAsync();
                 }
 
-                if (i + batchSize < records.Count)
+                if (i + processingBatchSize < records.Count)
                 {
                     await Task.Delay(delayBetweenBatchesMs);
                 }
             }
 
-            Console.WriteLine("\n");
-
-            // Write to output CSV
-            using (var writer = new StreamWriter(outputFile))
-            using (var csv = new CsvWriter(writer, config))
-            {
-                csv.WriteRecords(records);
-            }
+            Console.WriteLine("\nProcessing completed!");
+            Console.WriteLine($"Created {fileCounter - 1} batch files");
         }
 
         private async Task<string> TranslateTextAsync(string text, TranslationType translationType)

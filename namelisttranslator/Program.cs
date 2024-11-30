@@ -85,6 +85,27 @@ namespace CsvTranslator
                     includeJapaneseExtras = Console.ReadLine()?.Trim().ToLower() == "y";
                 }
 
+                Console.Write("\nEnter number of rows to skip (0 for none): ");
+                int skipRows = 0;
+                if (!int.TryParse(Console.ReadLine()?.Trim(), out skipRows) || skipRows < 0)
+                {
+                    skipRows = 0;
+                }
+
+                Console.Write("\nEnter number of records per output file (default 1000): ");
+                int outputBatchSize = 1000;
+                if (!int.TryParse(Console.ReadLine()?.Trim(), out outputBatchSize) || outputBatchSize <= 0)
+                {
+                    outputBatchSize = 1000;
+                }
+
+                Console.Write("\nEnter processing batch size (number of records to process at once, default 50): ");
+                int processingBatchSize = 50;
+                if (!int.TryParse(Console.ReadLine()?.Trim(), out processingBatchSize) || processingBatchSize <= 0)
+                {
+                    processingBatchSize = 50;
+                }
+
                 Console.Write("Enter the path for the output CSV file: ");
                 var outputFile = Console.ReadLine()?.Trim();
                 
@@ -98,7 +119,10 @@ namespace CsvTranslator
                 Console.WriteLine($"Column to Translate: {columnToTranslate}");
                 Console.WriteLine($"Selected Translations: {string.Join(", ", selectedTypes)}");
                 Console.WriteLine($"Include Japanese Extras: {includeJapaneseExtras}");
-                Console.WriteLine($"Output File: {outputFile}");
+                Console.WriteLine($"Skip Rows: {skipRows:N0} rows");
+                Console.WriteLine($"Output Batch Size: {outputBatchSize:N0} records per file");
+                Console.WriteLine($"Processing Batch Size: {processingBatchSize:N0} records at once");
+                Console.WriteLine($"Output File Base: {outputFile}");
                 Console.Write("\nProceed with translation? (y/n): ");
                 
                 if (Console.ReadLine()?.Trim().ToLower() != "y")
@@ -113,13 +137,15 @@ namespace CsvTranslator
                     outputFile: outputFile,
                     columnName: columnToTranslate,
                     translationTypes: selectedTypes,
+                    skipRows: skipRows,
+                    outputBatchSize: outputBatchSize,
+                    processingBatchSize: processingBatchSize,
                     includeJapaneseExtras: includeJapaneseExtras);
 
                 // Final quota check
                 await translator.CheckQuotaAsync();
 
                 Console.WriteLine($"\nTranslation completed successfully!");
-                Console.WriteLine($"Output saved to: {outputFile}");
             }
             catch (Exception ex)
             {
