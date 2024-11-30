@@ -1,0 +1,4 @@
+﻿Source,Country,TPCountry,Region,GeographyLevel2ID,Resort,GeographyLevel3ID,TPResort,HotelName,TPKey,TPPropertyID,PropertyReferenceID,CurrentyProperty,CurrentWithSupplier,CurrentPropertyReference,Japanese ,Hiragana,Katekana,Brazilan Portuguese,Colombian Spanish
+"MercuryHubExpedia","20208900","20208900","Prévessin-Moëns",21991,"Prévessin-Moëns",24224,"Prevessin-Moens","Premiere Classe Geneve - Aéroport - Prevessin",20208817,2158079,207481,"TRUE","TRUE","TRUE","","","","",""
+"MercuryHubExpedia","Åland Islands","Åland Islands","Mariehamn",1259,"Mariehamn",1259,"Mariehamn","Hotel Pommern",8194742,1752875,609645,"TRUE","TRUE","TRUE","","","","",""
+"MercuryHubExpedia","Åland Islands","Åland Islands","Hammarland",27110,"Hammarland",29498,"Hammarland","Paradiset",30557380,1793594,1545112,"TRUE","TRUE","TRUE","","","","",""
