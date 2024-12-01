@@ -116,6 +116,7 @@ namespace CsvTranslator
             int delayBetweenBatchesMs = 1000)
         {
             var records = new List<dynamic>();
+            var errorRows = new List<(int RowNumber, string Error)>();
             var config = new CsvConfiguration(CultureInfo.InvariantCulture)
             {
                 HasHeaderRecord = true,
@@ -148,6 +149,7 @@ namespace CsvTranslator
             Console.Write("Progress: [");
 
             var processedCount = 0;
+            var errorCount = 0;
             var progressBarPosition = Console.CursorTop;
             var progressBarLeft = Console.CursorLeft;
             var currentBatchRecords = new List<dynamic>();
@@ -158,45 +160,75 @@ namespace CsvTranslator
                 var batch = records.Skip(i).Take(processingBatchSize);
                 foreach (var record in batch)
                 {
-                    var originalText = ((IDictionary<string, object>)record)[columnName]?.ToString();
-                    if (!string.IsNullOrEmpty(originalText))
+                    try
                     {
-                        foreach (var translationType in translationTypes)
+                        var originalText = ((IDictionary<string, object>)record)[columnName]?.ToString();
+                        if (!string.IsNullOrEmpty(originalText))
                         {
-                            var translatedText = await TranslateTextAsync(originalText, translationType);
-                            ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = translatedText;
-
-                            if (includeJapaneseExtras && translationType == TranslationType.Japanese)
+                            foreach (var translationType in translationTypes)
                             {
-                                var processedText = _japaneseProcessor.ProcessText(translatedText);
-                                ((IDictionary<string, object>)record)[$"{columnName}_Romaji"] = processedText.Romaji;
-                                ((IDictionary<string, object>)record)[$"{columnName}_ReadingGuide"] = processedText.ReadingGuide;
-                                ((IDictionary<string, object>)record)[$"{columnName}_Segments"] = string.Join(" | ", processedText.Segments);
+                                try
+                                {
+                                    var translatedText = await TranslateTextAsync(originalText, translationType);
+                                    ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = translatedText;
+
+                                    if (includeJapaneseExtras && translationType == TranslationType.Japanese)
+                                    {
+                                        var processedText = _japaneseProcessor.ProcessText(translatedText);
+                                        ((IDictionary<string, object>)record)[$"{columnName}_Romaji"] = processedText.Romaji;
+                                        ((IDictionary<string, object>)record)[$"{columnName}_ReadingGuide"] = processedText.ReadingGuide;
+                                        ((IDictionary<string, object>)record)[$"{columnName}_Segments"] = string.Join(" | ", processedText.Segments);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    // Add error marker for this translation type
+                                    ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = $"ERROR: {ex.Message}";
+                                    errorRows.Add((skipRows + processedCount + 1, $"Translation error for {translationType}: {ex.Message}"));
+                                    errorCount++;
+                                }
                             }
                         }
+
+                        currentBatchRecords.Add(record);
+                    }
+                    catch (Exception ex)
+                    {
+                        errorRows.Add((skipRows + processedCount + 1, $"Row processing error: {ex.Message}"));
+                        errorCount++;
+                        Console.SetCursorPosition(0, progressBarPosition + 4);
+                        Console.WriteLine($"Error in row {skipRows + processedCount + 1}: {ex.Message}");
+                        continue; // Skip to next record
                     }
 
-                    currentBatchRecords.Add(record);
                     processedCount++;
 
                     // Write batch file when reaching outputBatchSize
                     if (currentBatchRecords.Count >= outputBatchSize || processedCount == records.Count)
                     {
-                        string batchFileName = Path.GetFileNameWithoutExtension(outputFile) + 
-                                             $"_batch{fileCounter}" +
-                                             Path.GetExtension(outputFile);
-                        string batchFilePath = Path.Combine(Path.GetDirectoryName(outputFile), batchFileName);
-
-                        using (var writer = new StreamWriter(batchFilePath))
-                        using (var csv = new CsvWriter(writer, config))
+                        try
                         {
-                            csv.WriteRecords(currentBatchRecords);
-                        }
+                            string batchFileName = Path.GetFileNameWithoutExtension(outputFile) + 
+                                                 $"_batch{fileCounter}" +
+                                                 Path.GetExtension(outputFile);
+                            string batchFilePath = Path.Combine(Path.GetDirectoryName(outputFile), batchFileName);
 
-                        Console.SetCursorPosition(0, progressBarPosition + 2);
-                        Console.WriteLine($"Wrote batch file: {batchFileName} ({currentBatchRecords.Count} records)");
-                        currentBatchRecords.Clear();
-                        fileCounter++;
+                            using (var writer = new StreamWriter(batchFilePath))
+                            using (var csv = new CsvWriter(writer, config))
+                            {
+                                csv.WriteRecords(currentBatchRecords);
+                            }
+
+                            Console.SetCursorPosition(0, progressBarPosition + 2);
+                            Console.WriteLine($"Wrote batch file: {batchFileName} ({currentBatchRecords.Count} records)");
+                            currentBatchRecords.Clear();
+                            fileCounter++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.SetCursorPosition(0, progressBarPosition + 4);
+                            Console.WriteLine($"Error writing batch file: {ex.Message}");
+                        }
                     }
 
                     // Update progress bar every 10 records
@@ -210,14 +242,14 @@ namespace CsvTranslator
                         Console.Write($"{(double)processedCount / records.Count:P0}");
                         
                         Console.SetCursorPosition(0, progressBarPosition + 1);
-                        Console.Write($"Records processed: {processedCount}/{records.Count} (Skipped: {skipRows})   ");
+                        Console.Write($"Records processed: {processedCount}/{records.Count} (Skipped: {skipRows}, Errors: {errorCount})   ");
                     }
-                }
 
-                if (processedCount % 500 == 0)
-                {
-                    Console.SetCursorPosition(0, progressBarPosition + 3);
-                    await CheckQuotaAsync();
+                    if (processedCount % 500 == 0)
+                    {
+                        Console.SetCursorPosition(0, progressBarPosition + 3);
+                        await CheckQuotaAsync();
+                    }
                 }
 
                 if (i + processingBatchSize < records.Count)
@@ -226,8 +258,19 @@ namespace CsvTranslator
                 }
             }
 
+            // Write error log if there were any errors
+            if (errorRows.Any())
+            {
+                string errorLogFile = Path.GetFileNameWithoutExtension(outputFile) + "_errors.log";
+                string errorLogPath = Path.Combine(Path.GetDirectoryName(outputFile), errorLogFile);
+                await File.WriteAllLinesAsync(errorLogPath, 
+                    errorRows.Select(e => $"Row {e.RowNumber}: {e.Error}"));
+                Console.WriteLine($"\nError details written to: {errorLogFile}");
+            }
+
             Console.WriteLine("\nProcessing completed!");
             Console.WriteLine($"Created {fileCounter - 1} batch files");
+            Console.WriteLine($"Total errors: {errorCount}");
         }
 
         private async Task<string> TranslateTextAsync(string text, TranslationType translationType)
