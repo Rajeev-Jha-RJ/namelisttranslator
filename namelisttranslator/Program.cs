@@ -52,6 +52,9 @@ namespace CsvTranslator
                     throw new ArgumentException("Column name cannot be empty.");
                 }
 
+                Console.Write("\nIs this column a proper noun (names, places, etc.)? (y/n): ");
+                bool isProperNoun = Console.ReadLine()?.Trim().ToLower() == "y";
+
                 Console.WriteLine("\nSelect translation types (comma-separated numbers):");
                 Console.WriteLine("1. Japanese");
                 Console.WriteLine("2. Hiragana");
@@ -117,6 +120,7 @@ namespace CsvTranslator
                 Console.WriteLine("\nOperation Summary:");
                 Console.WriteLine($"Input File: {inputFile}");
                 Console.WriteLine($"Column to Translate: {columnToTranslate}");
+                Console.WriteLine($"Is Proper Noun: {isProperNoun}");
                 Console.WriteLine($"Selected Translations: {string.Join(", ", selectedTypes)}");
                 Console.WriteLine($"Include Japanese Extras: {includeJapaneseExtras}");
                 Console.WriteLine($"Skip Rows: {skipRows:N0} rows");
@@ -137,6 +141,7 @@ namespace CsvTranslator
                     outputFile: outputFile,
                     columnName: columnToTranslate,
                     translationTypes: selectedTypes,
+                    isProperNoun: isProperNoun,
                     skipRows: skipRows,
                     outputBatchSize: outputBatchSize,
                     processingBatchSize: processingBatchSize,

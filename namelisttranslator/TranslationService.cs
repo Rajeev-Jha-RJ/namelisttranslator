@@ -74,7 +74,7 @@ namespace CsvTranslator
             try
             {
                 await CheckQuotaAsync();
-                await TranslateTextAsync("test", TranslationType.Japanese);
+                await TranslateTextAsync("test", TranslationType.Japanese,true);
                 Console.WriteLine("API key validation successful!");
             }
             catch (Exception ex)
@@ -109,6 +109,7 @@ namespace CsvTranslator
             string outputFile,
             string columnName,
             List<TranslationType> translationTypes,
+            bool isProperNoun = false,  // New paramete
             int skipRows = 0,
             int outputBatchSize = 1000,
             int processingBatchSize = 50,
@@ -169,6 +170,36 @@ namespace CsvTranslator
                             {
                                 try
                                 {
+                                    var translatedText = await TranslateTextAsync(originalText, translationType, isProperNoun);
+                                    ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = translatedText;
+
+                                    // Add proper noun indicator in the output
+                                    if (isProperNoun)
+                                    {
+                                        ((IDictionary<string, object>)record)[$"{columnName}_IsProperNoun"] = "true";
+                                    }
+
+                                    if (includeJapaneseExtras && translationType == TranslationType.Japanese)
+                                    {
+                                        var processedText = _japaneseProcessor.ProcessText(translatedText);
+                                        ((IDictionary<string, object>)record)[$"{columnName}_Romaji"] = processedText.Romaji;
+                                        ((IDictionary<string, object>)record)[$"{columnName}_ReadingGuide"] = processedText.ReadingGuide;
+                                        ((IDictionary<string, object>)record)[$"{columnName}_Segments"] = string.Join(" | ", processedText.Segments);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    // Error handling remains the same
+                                    ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = $"ERROR: {ex.Message}";
+                                    errorRows.Add((skipRows + processedCount + 1, $"Translation error for {translationType}: {ex.Message}"));
+                                    errorCount++;
+                                }
+                            }
+                            /* old code
+                            foreach (var translationType in translationTypes)
+                            {
+                                try
+                                {
                                     var translatedText = await TranslateTextAsync(originalText, translationType);
                                     ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = translatedText;
 
@@ -188,6 +219,7 @@ namespace CsvTranslator
                                     errorCount++;
                                 }
                             }
+                            */
                         }
 
                         currentBatchRecords.Add(record);
@@ -273,6 +305,67 @@ namespace CsvTranslator
             Console.WriteLine($"Total errors: {errorCount}");
         }
 
+        private async Task<string> TranslateTextAsync(string text, TranslationType translationType, bool isProperNoun)
+        {
+            // For proper nouns, directly transliterate for Japanese-related translations
+            if (isProperNoun && (translationType == TranslationType.Japanese || 
+                                translationType == TranslationType.Hiragana || 
+                                translationType == TranslationType.Katakana))
+            {
+                switch (translationType)
+                {
+                    case TranslationType.Japanese:
+                        return _japaneseProcessor.ToKatakana(text);  // Default to Katakana for proper nouns
+                    case TranslationType.Hiragana:
+                        return _japaneseProcessor.ToHiragana(text);
+                    case TranslationType.Katakana:
+                        return _japaneseProcessor.ToKatakana(text);
+                    default:
+                        return text;
+                }
+            }
+
+            // For non-Japanese languages or non-proper nouns, use regular translation
+            var targetLang = _targetLanguages[translationType];
+            
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("text", text),
+                new KeyValuePair<string, string>("target_lang", targetLang),
+                new KeyValuePair<string, string>("source_lang", "EN"),
+                new KeyValuePair<string, string>("preserve_formatting", "1"),
+                // Add formality preference for proper nouns
+                new KeyValuePair<string, string>("formality", isProperNoun ? "more" : "default")
+            });
+
+            try
+            {
+                var response = await _httpClient.PostAsync(_apiUrl, content);
+                
+                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new Exception($"Authentication failed: {errorContent}");
+                }
+                
+                response.EnsureSuccessStatusCode();
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(jsonResponse);
+                var translatedText = doc.RootElement
+                    .GetProperty("translations")[0]
+                    .GetProperty("text")
+                    .GetString() ?? string.Empty;
+
+                return translatedText;
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.WriteLine($"API Request Error: {ex.Message}");
+                throw;
+            }
+        }
+
+        /* old method
         private async Task<string> TranslateTextAsync(string text, TranslationType translationType)
         {
             var targetLang = _targetLanguages[translationType];
@@ -321,6 +414,7 @@ namespace CsvTranslator
                 throw;
             }
         }
+        */
 
         private void ValidateColumn(CsvReader csv, string columnName)
         {
