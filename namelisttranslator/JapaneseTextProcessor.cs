@@ -9,12 +9,12 @@ namespace CsvTranslator
 
         public class ProcessedJapaneseText
         {
-            public string Original { get; set; }
-            public string Hiragana { get; set; }
-            public string Katakana { get; set; }
-            public string Romaji { get; set; }
-            public List<string> Segments { get; set; }
-            public string ReadingGuide { get; set; }
+            public required string Original { get; set; }
+            public required string Hiragana { get; set; }
+            public required string Katakana { get; set; }
+            public required string Romaji { get; set; }
+            public required List<string> Segments { get; set; }
+            public required string ReadingGuide { get; set; }
         }
 
         private static readonly Dictionary<char, char> HiraganaToKatakanaMap;
@@ -124,7 +124,7 @@ namespace CsvTranslator
                 if (i < input.Length - 1)
                 {
                     string pair = input.Substring(i, 2);
-                    if (RomajiMap.TryGetValue(pair, out string romajiPair))
+                    if (RomajiMap.TryGetValue(pair, out string? romajiPair) && romajiPair is not null)
                     {
                         result.Append(romajiPair);
                         i++;
@@ -134,7 +134,7 @@ namespace CsvTranslator
                 }
                 // If no contracted sound found, try single character
                 string single = input[i].ToString();
-                if (RomajiMap.TryGetValue(single, out string romaji))
+                if (RomajiMap.TryGetValue(single, out string? romaji) && romaji is not null)
                 {
                     result.Append(romaji);
                     found = true;
@@ -179,144 +179,135 @@ namespace CsvTranslator
     {
         _phoneticMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            // Common English word endings
-            {"worth", "ワース"},
-            {"ville", "ビル"},
-            {"field", "フィールド"},
-            {"bridge", "ブリッジ"},
-            {"burgh", "バラ"},
-            {"water", "ウォーター"},
-            {"berry", "ベリー"},
-            {"shire", "シャー"},
-            {"stone", "ストーン"},
-            {"leigh", "リー"},
-            {"port", "ポート"},
-            {"side", "サイド"},
-            {"wood", "ウッド"},
-            {"land", "ランド"},
-            {"gate", "ゲート"},
-            {"ford", "フォード"},
-            {"view", "ビュー"},
-            {"hill", "ヒル"},
-            {"son", "ソン"},
-            {"ton", "トン"},
+            // Complete words and common names
+            {"hotel", "ホテル"},
+            {"albania", "アルバニア"},
+            {"international", "インターナショナル"},
+            {"restaurant", "レストラン"},
+            {"resort", "リゾート"},
+            
+            // Consonant combinations (must come before single consonants)
+            {"mak", "マク"},
+            {"mac", "マク"},
+            {"mc", "マク"},
+            {"bh", "ブ"},
+            {"gh", "グ"},
+            {"kh", "ク"},
+            {"ph", "フ"},
+            {"sh", "シ"},
+            {"ch", "チ"},
+            {"th", "ス"},
+            {"wh", "ウ"},
+            {"ck", "ック"},
+            {"ng", "ング"},
+            {"mb", "ンブ"},
+            
+            // Common syllables
+            {"ma", "マ"},
+            {"mi", "ミ"},
+            {"mu", "ム"},
+            {"me", "メ"},
+            {"mo", "モ"},
+            {"ba", "バ"},
+            {"bi", "ビ"},
+            {"bu", "ブ"},
+            {"be", "ベ"},
+            {"bo", "ボ"},
+            {"pa", "パ"},
+            {"pi", "ピ"},
+            {"pu", "プ"},
+            {"pe", "ペ"},
+            {"po", "ポ"},
+            {"ta", "タ"},
+            {"ti", "ティ"},
+            {"tu", "トゥ"},
+            {"te", "テ"},
+            {"to", "ト"},
+            {"da", "ダ"},
+            {"di", "ディ"},
+            {"du", "ドゥ"},
+            {"de", "デ"},
+            {"do", "ド"},
+            {"ka", "カ"},
+            {"ki", "キ"},
+            {"ku", "ク"},
+            {"ke", "ケ"},
+            {"ko", "コ"},
+            {"ga", "ガ"},
+            {"gi", "ギ"},
+            {"gu", "グ"},
+            {"ge", "ゲ"},
+            {"go", "ゴ"},
+            {"sa", "サ"},
+            {"si", "シ"},
+            {"su", "ス"},
+            {"se", "セ"},
+            {"so", "ソ"},
+            {"za", "ザ"},
+            {"zi", "ジ"},
+            {"zu", "ズ"},
+            {"ze", "ゼ"},
+            {"zo", "ゾ"},
+            {"ra", "ラ"},
+            {"ri", "リ"},
+            {"ru", "ル"},
+            {"re", "レ"},
+            {"ro", "ロ"},
+            {"wa", "ワ"},
+            {"wi", "ウィ"},
+            {"wu", "ウ"},
+            {"we", "ウェ"},
+            {"wo", "ヲ"},
+            {"ya", "ヤ"},
+            {"yu", "ユ"},
+            {"yo", "ヨ"},
+            {"ha", "ハ"},
+            {"hi", "ヒ"},
+            {"hu", "フ"},
+            {"he", "ヘ"},
+            {"ho", "ホ"},
+            {"na", "ナ"},
+            {"ni", "ニ"},
+            {"nu", "ヌ"},
+            {"ne", "ネ"},
+            {"no", "ノ"},
+            {"la", "ラ"},
+            {"li", "リ"},
+            {"lu", "ル"},
+            {"le", "レ"},
+            {"lo", "ロ"},
 
-            // Common letter patterns (longest first)
-            {"ough", "オー"},    // through -> スルー
-            {"ought", "オート"},  // bought -> ボート
-            {"augh", "オー"},     // taught -> トート
-            {"tion", "ション"},   // action -> アクション
-            {"sion", "ション"},   // vision -> ビジョン
-            {"cial", "シャル"},   // special -> スペシャル
-            {"tial", "シャル"},   // partial -> パーシャル
-
-            // Vowel combinations
-            {"ee", "イー"},
-            {"oo", "ウー"},
-            {"ai", "エイ"},
-            {"ay", "エイ"},
-            {"ie", "アイ"},
-            {"oa", "オー"},
-            {"au", "オー"},
-            {"ou", "アウ"},
-            {"ea", "イー"},
-            {"ey", "エイ"},
-            {"igh", "アイ"},
-            {"ow", "オー"},
-            {"ew", "ュー"},
-
-            // Complex consonant combinations
-            {"str", "ストr"},
-            {"spr", "スプr"},
-            {"scr", "スクr"},
-            {"spl", "スプl"},
-            {"thr", "スr"},
-            {"chr", "クr"},
-            {"dge", "ッジ"},
-
-            // Special syllable combinations
-            {"tha", "サ"},
-            {"thi", "シ"},
-            {"thu", "ス"},
-            {"the", "ゼ"},
-            {"tho", "ソ"},
-            {"cha", "チャ"},
-            {"chi", "チ"},
-            {"chu", "チュ"},
-            {"che", "チェ"},
-            {"cho", "チョ"},
-            {"sha", "シャ"},
-            {"shi", "シ"},
-            {"shu", "シュ"},
-            {"she", "シェ"},
-            {"sho", "ショ"},
-            {"kya", "キャ"},
-            {"kyu", "キュ"},
-            {"kyo", "キョ"},
-            {"gya", "ギャ"},
-            {"gyu", "ギュ"},
-            {"gyo", "ギョ"},
-            {"nya", "ニャ"},
-            {"nyu", "ニュ"},
-            {"nyo", "ニョ"},
-            {"hya", "ヒャ"},
-            {"hyu", "ヒュ"},
-            {"hyo", "ヒョ"},
-            {"mya", "ミャ"},
-            {"myu", "ミュ"},
-            {"myo", "ミョ"},
-            {"rya", "リャ"},
-            {"ryu", "リュ"},
-            {"ryo", "リョ"},
-            {"bya", "ビャ"},
-            {"byu", "ビュ"},
-            {"byo", "ビョ"},
-            {"pya", "ピャ"},
-            {"pyu", "ピュ"},
-            {"pyo", "ピョ"},
-
-            // Basic consonant + vowel combinations
-            {"ka", "カ"}, {"ki", "キ"}, {"ku", "ク"}, {"ke", "ケ"}, {"ko", "コ"},
-            {"sa", "サ"}, {"si", "シ"}, {"su", "ス"}, {"se", "セ"}, {"so", "ソ"},
-            {"ta", "タ"}, {"te", "テ"}, {"to", "ト"},
-            {"na", "ナ"}, {"ni", "ニ"}, {"nu", "ヌ"}, {"ne", "ネ"}, {"no", "ノ"},
-            {"ha", "ハ"}, {"hi", "ヒ"}, {"fu", "フ"}, {"he", "ヘ"}, {"ho", "ホ"},
-            {"ma", "マ"}, {"mi", "ミ"}, {"mu", "ム"}, {"me", "メ"}, {"mo", "モ"},
-            {"ya", "ヤ"}, {"yu", "ユ"}, {"yo", "ヨ"},
-            {"ra", "ラ"}, {"ri", "リ"}, {"ru", "ル"}, {"re", "レ"}, {"ro", "ロ"},
-            {"wa", "ワ"}, {"wo", "ヲ"},
-
-            // Double consonants (geminate)
-            {"kk", "ッk"},
-            {"tt", "ッt"},
-            {"ss", "ッs"},
-            {"pp", "ッp"},
-            {"bb", "ッb"},
-            {"dd", "ッd"},
-            {"ff", "ッf"},
-            {"gg", "ッg"},
-            {"mm", "ッm"},
-            {"rr", "ッr"},
-            {"ll", "ッl"},
-
-            // Single vowels
+            // Single letters (used as fallback)
             {"a", "ア"},
             {"i", "イ"},
             {"u", "ウ"},
             {"e", "エ"},
             {"o", "オ"},
             {"n", "ン"},
-
-            // Foreign sound combinations
-            {"va", "ヴァ"}, {"vi", "ヴィ"}, {"vu", "ヴ"}, {"ve", "ヴェ"}, {"vo", "ヴォ"},
-            {"fa", "ファ"}, {"fi", "フィ"}, {"fe", "フェ"}, {"fo", "フォ"},
-            {"qa", "クァ"}, {"qi", "クィ"}, {"qe", "クェ"}, {"qo", "クォ"},
-
-            // Extended katakana
-            {"ye", "イェ"},
-            {"wi", "ウィ"},
-            {"we", "ウェ"}
+            
+            // Single consonants (with default vowel sound)
+            {"b", "ブ"},
+            {"c", "ク"},
+            {"d", "ド"},
+            {"f", "フ"},
+            {"g", "グ"},
+            {"h", "フ"},
+            {"j", "ジ"},
+            {"k", "ク"},
+            {"l", "ル"},
+            {"m", "ム"},
+            {"p", "プ"},
+            {"q", "ク"},
+            {"r", "ル"},
+            {"s", "ス"},
+            {"t", "ト"},
+            {"v", "ブ"},
+            {"w", "ウ"},
+            {"x", "クス"},
+            {"y", "イ"},
+            {"z", "ズ"}
         };
+
     }
 
     public string Transliterate(string input)
@@ -324,60 +315,59 @@ namespace CsvTranslator
         if (string.IsNullOrWhiteSpace(input))
             return input;
 
-        // Pre-process the input for better handling of English patterns
-        var processedInput = PreProcessInput(input);
-        
+        // Split input into words for better word-by-word handling
+        var words = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var result = new StringBuilder();
-        var lowerInput = processedInput.ToLower();
-        int i = 0;
 
-        while (i < lowerInput.Length)
+        foreach (var word in words)
         {
-            bool matchFound = false;
-            
-            // Try to match longest possible substring first
-            for (int j = Math.Min(8, lowerInput.Length - i); j > 0 && !matchFound; j--)
+            // Try to match the complete word first
+            if (_phoneticMappings.TryGetValue(word.ToLower(), out var completeWord))
             {
-                if (i + j <= lowerInput.Length)
-                {
-                    var substr = lowerInput.Substring(i, j);
-                    if (_phoneticMappings.TryGetValue(substr, out string? kana))
-                    {
-                        result.Append(kana);
-                        i += j;
-                        matchFound = true;
-                    }
-                }
+                result.Append(completeWord);
             }
-
-            // Handle unmatched characters
-            if (!matchFound)
+            else
             {
-                char c = lowerInput[i];
-                if ("bcdfghjklmnpqrstvwxyz".Contains(c))
+                // Process word character by character if no complete match
+                var i = 0;
+                var processedWord = new StringBuilder();
+                
+                while (i < word.Length)
                 {
-                    // Add a vowel sound for lone consonants
-                    if (i + 1 >= lowerInput.Length || "bcdfghjklmnpqrstvwxyz".Contains(lowerInput[i + 1]))
+                    bool matchFound = false;
+                    
+                    // Try to match longest possible substring
+                    for (int len = Math.Min(4, word.Length - i); len > 0 && !matchFound; len--)
                     {
-                        result.Append(_phoneticMappings.GetValueOrDefault(c + "u", c.ToString()));
+                        var substr = word.Substring(i, len).ToLower();
+                        if (_phoneticMappings.TryGetValue(substr, out var kana))
+                        {
+                            processedWord.Append(kana);
+                            i += len;
+                            matchFound = true;
+                        }
                     }
-                    else
+
+                    // If no match found, use single character mapping
+                    if (!matchFound)
                     {
-                        result.Append(c);
+                        var c = word[i].ToString().ToLower();
+                        processedWord.Append(_phoneticMappings.GetValueOrDefault(c, c));
+                        i++;
                     }
                 }
-                else
-                {
-                    result.Append(_phoneticMappings.GetValueOrDefault(c.ToString(), c.ToString()));
-                }
-                i++;
+
+                result.Append(processedWord);
+            }
+            
+            // Add space between words if not the last word
+            if (word != words.Last())
+            {
+                result.Append("・");  // Using middle dot as word separator
             }
         }
 
-        // Post-process the result
-        var finalResult = PostProcessResult(result.ToString());
-        
-        return finalResult;
+        return result.ToString();
     }
 
     private string PreProcessInput(string input)

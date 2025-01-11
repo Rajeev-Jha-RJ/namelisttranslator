@@ -14,6 +14,13 @@ namespace CsvTranslator
         ColombianSpanish
     }
 
+    public enum ProperNounHandling
+    {
+        Transliterate,
+        Translate,
+        Both
+    }
+
     public class TranslationService
     {
         private readonly HttpClient _httpClient;
@@ -99,7 +106,7 @@ namespace CsvTranslator
                 // Try a test translation
                 try
                 {
-                    await TranslateTextAsync("test", TranslationType.Japanese, false);
+                    await TranslateTextAsync("test", TranslationType.Japanese, false,ProperNounHandling.Translate);
                     Console.WriteLine("API key validation successful!");
                 }
                 catch (HttpRequestException ex)
@@ -149,8 +156,11 @@ namespace CsvTranslator
             int outputBatchSize = 1000,
             int processingBatchSize = 50,
             bool includeJapaneseExtras = false,
-            int delayBetweenBatchesMs = 1000)
+            int delayBetweenBatchesMs = 1000,
+            ProperNounHandling properNounHandling = ProperNounHandling.Transliterate)
         {
+            Console.WriteLine($"isProperNoun: {isProperNoun}| properNounHandling: {properNounHandling}|");
+
             var records = new List<dynamic>();
             var errorRows = new List<(int RowNumber, string Error)>();
             var config = new CsvConfiguration(CultureInfo.InvariantCulture)
@@ -205,56 +215,58 @@ namespace CsvTranslator
                             {
                                 try
                                 {
-                                    var translatedText = await TranslateTextAsync(originalText, translationType, isProperNoun);
-                                    ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = translatedText;
-
-                                    // Add proper noun indicator in the output
-                                    if (isProperNoun)
+                                    if (isProperNoun && properNounHandling == ProperNounHandling.Both &&
+                                        (translationType is TranslationType.Japanese or TranslationType.Hiragana or TranslationType.Katakana))
                                     {
-                                        ((IDictionary<string, object>)record)[$"{columnName}_IsProperNoun"] = "true";
+                                        // For "Both" option, create two separate columns
+                                        var transliterated = _transliterator.Transliterate(originalText);
+                                        var translated = await PerformTranslation(originalText, translationType);
+
+                                        Console.WriteLine($"Transliterated: {transliterated}| Translated: {translated}");
+                                        // Add as two separate columns
+                                        ((IDictionary<string, object>)record)[$"{columnName}_Transliterated"] = transliterated;
+                                        ((IDictionary<string, object>)record)[$"{columnName}_Translated"] = translated;
+
+                                        // Handle Japanese extras if needed
+                                        if (includeJapaneseExtras && translationType == TranslationType.Japanese)
+                                        {
+                                            var processedText = _japaneseProcessor.ProcessText(translated);
+                                            ((IDictionary<string, object>)record)[$"{columnName}_Romaji"] = processedText.Romaji;
+                                            ((IDictionary<string, object>)record)[$"{columnName}_ReadingGuide"] = processedText.ReadingGuide;
+                                            ((IDictionary<string, object>)record)[$"{columnName}_Segments"] = string.Join(" | ", processedText.Segments);
+                                        }
                                     }
-
-                                    if (includeJapaneseExtras && translationType == TranslationType.Japanese)
+                                    else
                                     {
-                                        var processedText = _japaneseProcessor.ProcessText(translatedText);
-                                        ((IDictionary<string, object>)record)[$"{columnName}_Romaji"] = processedText.Romaji;
-                                        ((IDictionary<string, object>)record)[$"{columnName}_ReadingGuide"] = processedText.ReadingGuide;
-                                        ((IDictionary<string, object>)record)[$"{columnName}_Segments"] = string.Join(" | ", processedText.Segments);
+                                        // Normal processing for non-proper nouns or other handling options
+                                        var (translated, _) = await TranslateTextAsync(
+                                            originalText, 
+                                            translationType, 
+                                            isProperNoun,
+                                            properNounHandling);
+
+                                        ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = translated;
+
+                                        if (includeJapaneseExtras && translationType == TranslationType.Japanese)
+                                        {
+                                            var processedText = _japaneseProcessor.ProcessText(translated);
+                                            ((IDictionary<string, object>)record)[$"{columnName}_Romaji"] = processedText.Romaji;
+                                            ((IDictionary<string, object>)record)[$"{columnName}_ReadingGuide"] = processedText.ReadingGuide;
+                                            ((IDictionary<string, object>)record)[$"{columnName}_Segments"] = string.Join(" | ", processedText.Segments);
+                                        }
                                     }
                                 }
                                 catch (Exception ex)
                                 {
-                                    // Error handling remains the same
-                                    ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = $"ERROR: {ex.Message}";
+                                    string columnSuffix = (isProperNoun && properNounHandling == ProperNounHandling.Both) 
+                                        ? "_Translated" 
+                                        : _columnSuffixes[translationType];
+                                        
+                                    ((IDictionary<string, object>)record)[$"{columnName}{columnSuffix}"] = $"ERROR: {ex.Message}";
                                     errorRows.Add((skipRows + processedCount + 1, $"Translation error for {translationType}: {ex.Message}"));
                                     errorCount++;
                                 }
                             }
-                            /* old code
-                            foreach (var translationType in translationTypes)
-                            {
-                                try
-                                {
-                                    var translatedText = await TranslateTextAsync(originalText, translationType);
-                                    ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = translatedText;
-
-                                    if (includeJapaneseExtras && translationType == TranslationType.Japanese)
-                                    {
-                                        var processedText = _japaneseProcessor.ProcessText(translatedText);
-                                        ((IDictionary<string, object>)record)[$"{columnName}_Romaji"] = processedText.Romaji;
-                                        ((IDictionary<string, object>)record)[$"{columnName}_ReadingGuide"] = processedText.ReadingGuide;
-                                        ((IDictionary<string, object>)record)[$"{columnName}_Segments"] = string.Join(" | ", processedText.Segments);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    // Add error marker for this translation type
-                                    ((IDictionary<string, object>)record)[$"{columnName}{_columnSuffixes[translationType]}"] = $"ERROR: {ex.Message}";
-                                    errorRows.Add((skipRows + processedCount + 1, $"Translation error for {translationType}: {ex.Message}"));
-                                    errorCount++;
-                                }
-                            }
-                            */
                         }
 
                         currentBatchRecords.Add(record);
@@ -278,7 +290,8 @@ namespace CsvTranslator
                             string batchFileName = Path.GetFileNameWithoutExtension(outputFile) + 
                                                  $"_batch{fileCounter}" +
                                                  Path.GetExtension(outputFile);
-                            string batchFilePath = Path.Combine(Path.GetDirectoryName(outputFile), batchFileName);
+                            string directoryPath = Path.GetDirectoryName(outputFile) ?? ".";
+                            string batchFilePath = Path.Combine(directoryPath, batchFileName);
 
                             using (var writer = new StreamWriter(batchFilePath))
                             using (var csv = new CsvWriter(writer, config))
@@ -329,7 +342,7 @@ namespace CsvTranslator
             if (errorRows.Any())
             {
                 string errorLogFile = Path.GetFileNameWithoutExtension(outputFile) + "_errors.log";
-                string errorLogPath = Path.Combine(Path.GetDirectoryName(outputFile), errorLogFile);
+                string errorLogPath = Path.Combine(Path.GetDirectoryName(outputFile) ?? ".", errorLogFile);
                 await File.WriteAllLinesAsync(errorLogPath, 
                     errorRows.Select(e => $"Row {e.RowNumber}: {e.Error}"));
                 Console.WriteLine($"\nError details written to: {errorLogFile}");
@@ -340,138 +353,38 @@ namespace CsvTranslator
             Console.WriteLine($"Total errors: {errorCount}");
         }
 
-        private async Task<string> TranslateTextAsync(string text, TranslationType translationType, bool isProperNoun)
+        private async Task<(string translated, string? transliterated)> TranslateTextAsync(
+            string text, 
+            TranslationType translationType, 
+            bool isProperNoun,
+            ProperNounHandling properNounHandling)
         {
-            //if (isProperNoun && (translationType is TranslationType.Japanese or TranslationType.Hiragana or TranslationType.Katakana))
-            //{
-            //    return _transliterator.Transliterate(text);
-            //}
-            
-            if (isProperNoun && (translationType is TranslationType.Japanese or TranslationType.Hiragana or TranslationType.Katakana))
+            if (isProperNoun && 
+                (translationType is TranslationType.Japanese or TranslationType.Hiragana or TranslationType.Katakana))
             {
-                var katakana = _transliterator.Transliterate(text);
-                
-                return translationType switch
+                switch (properNounHandling)
                 {
-                    TranslationType.Hiragana => _japaneseProcessor.ToHiragana(katakana),
-                    _ => katakana // For Japanese and Katakana, keep as Katakana
-                };
-            }
-
-            // Rest of the translation code remains the same...
-
-            // First, get the basic translation
-            var targetLang = _targetLanguages[translationType];
-            
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("text", text),
-                new KeyValuePair<string, string>("target_lang", targetLang),
-                new KeyValuePair<string, string>("source_lang", "EN"),
-                new KeyValuePair<string, string>("preserve_formatting", "1")
-            });
-
-            try
-            {
-                var response = await _httpClient.PostAsync(_apiUrl, content);
-                
-                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    throw new Exception($"Authentication failed: {errorContent}");
-                }
-                
-                response.EnsureSuccessStatusCode();
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(jsonResponse);
-                var translatedText = doc.RootElement
-                    .GetProperty("translations")[0]
-                    .GetProperty("text")
-                    .GetString() ?? string.Empty;
-
-                // For proper nouns in Japanese-related translations, convert to appropriate script
-                if (isProperNoun && translationType is TranslationType.Japanese or TranslationType.Katakana)
-                {
-                    return _japaneseProcessor.ToKatakana(translatedText);  // Convert to Katakana as it's a proper noun
-                }
-                else if (isProperNoun && translationType == TranslationType.Hiragana)
-                {
-                    return _japaneseProcessor.ToHiragana(translatedText);
-                }
-
-                return translatedText;
-            }
-            catch (HttpRequestException ex)
-            {
-                Console.WriteLine($"API Request Error: {ex.Message}");
-                throw;
-            }
-        }
-
-        /*
-        private async Task<string> TranslateTextAsync(string text, TranslationType translationType, bool isProperNoun)
-        {
-            // For proper nouns, directly transliterate for Japanese-related translations
-            if (isProperNoun && (translationType == TranslationType.Japanese || 
-                                translationType == TranslationType.Hiragana || 
-                                translationType == TranslationType.Katakana))
-            {
-                switch (translationType)
-                {
-                    case TranslationType.Japanese:
-                        return _japaneseProcessor.ToKatakana(text);  // Default to Katakana for proper nouns
-                    case TranslationType.Hiragana:
-                        return _japaneseProcessor.ToHiragana(text);
-                    case TranslationType.Katakana:
-                        return _japaneseProcessor.ToKatakana(text);
+                    case ProperNounHandling.Transliterate:
+                        return (_transliterator.Transliterate(text), null);
+                        
+                    case ProperNounHandling.Translate:
+                        return (await PerformTranslation(text, translationType), null);
+                        
+                    case ProperNounHandling.Both:
+                        var transliterated = _transliterator.Transliterate(text);
+                        var translated = await PerformTranslation(text, translationType);
+                        return (translated, transliterated);
+                        
                     default:
-                        return text;
+                        return (_transliterator.Transliterate(text), null);
                 }
             }
 
-            // For non-Japanese languages or non-proper nouns, use regular translation
-            var targetLang = _targetLanguages[translationType];
-            
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("text", text),
-                new KeyValuePair<string, string>("target_lang", targetLang),
-                new KeyValuePair<string, string>("source_lang", "EN"),
-                new KeyValuePair<string, string>("preserve_formatting", "1"),
-                // Add formality preference for proper nouns
-                new KeyValuePair<string, string>("formality", isProperNoun ? "more" : "default")
-            });
-
-            try
-            {
-                var response = await _httpClient.PostAsync(_apiUrl, content);
-                
-                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    throw new Exception($"Authentication failed: {errorContent}");
-                }
-                
-                response.EnsureSuccessStatusCode();
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(jsonResponse);
-                var translatedText = doc.RootElement
-                    .GetProperty("translations")[0]
-                    .GetProperty("text")
-                    .GetString() ?? string.Empty;
-
-                return translatedText;
-            }
-            catch (HttpRequestException ex)
-            {
-                Console.WriteLine($"API Request Error: {ex.Message}");
-                throw;
-            }
+            // For non-proper nouns or non-Japanese translations
+            return (await PerformTranslation(text, translationType), null);
         }
-        */
 
-        /* old method
-        private async Task<string> TranslateTextAsync(string text, TranslationType translationType)
+        private async Task<string> PerformTranslation(string text, TranslationType translationType)
         {
             var targetLang = _targetLanguages[translationType];
             
@@ -496,22 +409,10 @@ namespace CsvTranslator
                 response.EnsureSuccessStatusCode();
                 var jsonResponse = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(jsonResponse);
-                var translatedText = doc.RootElement
+                return doc.RootElement
                     .GetProperty("translations")[0]
                     .GetProperty("text")
                     .GetString() ?? string.Empty;
-
-                // Process Japanese text based on translation type
-                if (translationType == TranslationType.Hiragana)
-                {
-                    return _japaneseProcessor.ToHiragana(translatedText);
-                }
-                else if (translationType == TranslationType.Katakana)
-                {
-                    return _japaneseProcessor.ToKatakana(translatedText);
-                }
-
-                return translatedText;
             }
             catch (HttpRequestException ex)
             {
@@ -519,7 +420,6 @@ namespace CsvTranslator
                 throw;
             }
         }
-        */
 
         private void ValidateColumn(CsvReader csv, string columnName)
         {

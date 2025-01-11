@@ -15,7 +15,7 @@ namespace CsvTranslator
                 Console.WriteLine("- For Pro API: No specific prefix/suffix required");
                 Console.Write("\nAPI Key: ");
                 
-                var apiKey = "d41da4c9-b6d2-4abb-9f76-9fb976ccdd2e"; //Console.ReadLine()?.Trim();
+                var apiKey = Console.ReadLine()?.Trim();
                 
                 if (string.IsNullOrEmpty(apiKey))
                 {
@@ -55,6 +55,21 @@ namespace CsvTranslator
 
                 Console.Write("\nIs this column a proper noun (names, places, etc.)? (y/n): ");
                 bool isProperNoun = Console.ReadLine()?.Trim().ToLower() == "y";
+
+                ProperNounHandling properNounHandling = ProperNounHandling.Transliterate; // Default value
+                if (isProperNoun)
+                {
+                    Console.WriteLine("\nHow would you like to handle proper nouns?");
+                    Console.WriteLine("1. Transliterate only (convert to Japanese characters)");
+                    Console.WriteLine("2. Translate only (standard translation)");
+                    Console.WriteLine("3. Both (create two columns)");
+                    Console.Write("\nEnter your choice (1-3): ");
+
+                    if (int.TryParse(Console.ReadLine()?.Trim(), out int choice) && choice >= 1 && choice <= 3)
+                    {
+                        properNounHandling = (ProperNounHandling)(choice - 1);
+                    }
+                }
 
                 Console.WriteLine("\nSelect translation types (comma-separated numbers):");
                 Console.WriteLine("1. Japanese");
@@ -122,6 +137,10 @@ namespace CsvTranslator
                 Console.WriteLine($"Input File: {inputFile}");
                 Console.WriteLine($"Column to Translate: {columnToTranslate}");
                 Console.WriteLine($"Is Proper Noun: {isProperNoun}");
+                if (isProperNoun)
+                {
+                    Console.WriteLine($"Proper Noun Handling: {properNounHandling}");
+                }
                 Console.WriteLine($"Selected Translations: {string.Join(", ", selectedTypes)}");
                 Console.WriteLine($"Include Japanese Extras: {includeJapaneseExtras}");
                 Console.WriteLine($"Skip Rows: {skipRows:N0} rows");
@@ -146,7 +165,8 @@ namespace CsvTranslator
                     skipRows: skipRows,
                     outputBatchSize: outputBatchSize,
                     processingBatchSize: processingBatchSize,
-                    includeJapaneseExtras: includeJapaneseExtras);
+                    includeJapaneseExtras: includeJapaneseExtras,   
+                    properNounHandling: properNounHandling);
                 
                 // Final quota check
                 await translator.CheckQuotaAsync();
@@ -159,7 +179,7 @@ namespace CsvTranslator
             }
 
             Console.WriteLine("\nPress any key to exit...");
-            Console.ReadKey();
+            //Console.ReadKey();
         }
     }
 }
