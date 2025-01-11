@@ -222,7 +222,6 @@ namespace CsvTranslator
                                         var transliterated = _transliterator.Transliterate(originalText);
                                         var translated = await PerformTranslation(originalText, translationType);
 
-                                        Console.WriteLine($"Transliterated: {transliterated}| Translated: {translated}");
                                         // Add as two separate columns
                                         ((IDictionary<string, object>)record)[$"{columnName}_Transliterated"] = transliterated;
                                         ((IDictionary<string, object>)record)[$"{columnName}_Translated"] = translated;
