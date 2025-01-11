@@ -17,10 +17,11 @@ namespace CsvTranslator
     public class TranslationService
     {
         private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
+        private readonly string _apiKey;    
         private readonly string _apiUrl;
         private readonly JapaneseTextProcessor _japaneseProcessor;
-
+        private readonly JapaneseTransliterator _transliterator;
+        
         private readonly Dictionary<TranslationType, string> _targetLanguages = new()
         {
             { TranslationType.Japanese, "JA" },
@@ -53,33 +54,67 @@ namespace CsvTranslator
             _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
             
             _japaneseProcessor = new JapaneseTextProcessor();
+            _transliterator = new JapaneseTransliterator();
         }
 
         public async Task ValidateApiKeyAsync()
         {
-            if (!_apiKey.Contains("-"))
-            {
-                throw new ArgumentException("Invalid API key format. Key should contain hyphens (-)");
-            }
-
-            if (_apiKey.EndsWith(":fx", StringComparison.OrdinalIgnoreCase))
-            {
-                var keyParts = _apiKey.Split(':')[0].Split('-');
-                if (keyParts.Length != 5 || keyParts.Any(part => part.Length != 4))
-                {
-                    throw new ArgumentException("Invalid Free API key format. Expected format: xxxx-xxxx-xxxx-xxxx-xxxx:fx");
-                }
-            }
-
             try
             {
-                await CheckQuotaAsync();
-                await TranslateTextAsync("test", TranslationType.Japanese,true);
-                Console.WriteLine("API key validation successful!");
+                // First validate the key format
+                if (string.IsNullOrWhiteSpace(_apiKey))
+                {
+                    throw new ArgumentException("API key cannot be empty");
+                }
+
+                if (!_apiKey.Contains("-"))
+                {
+                    throw new ArgumentException("Invalid API key format. Key should contain hyphens (-)");
+                }
+
+                // Validate free API key format
+                if (_apiKey.EndsWith(":fx", StringComparison.OrdinalIgnoreCase))
+                {
+                    var keyParts = _apiKey.Split(':')[0].Split('-');
+                    if (keyParts.Length != 5 || keyParts.Any(part => part.Length != 4))
+                    {
+                        throw new ArgumentException("Invalid Free API key format. Expected format: xxxx-xxxx-xxxx-xxxx-xxxx:fx");
+                    }
+                }
+
+                // Try to check quota first
+                try
+                {
+                    await CheckQuotaAsync();
+                }
+                catch (HttpRequestException ex)
+                {
+                    throw new Exception($"Failed to validate API key: {ex.Message}. Please verify your API key is correct and you have internet connectivity.");
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Failed to check quota: {ex.Message}");
+                }
+
+                // Try a test translation
+                try
+                {
+                    await TranslateTextAsync("test", TranslationType.Japanese, false);
+                    Console.WriteLine("API key validation successful!");
+                }
+                catch (HttpRequestException ex)
+                {
+                    throw new Exception($"Translation test failed: {ex.Message}. Please verify your API key has translation permissions.");
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Translation test failed: {ex.Message}");
+                }
             }
             catch (Exception ex)
             {
-                throw new Exception($"API key validation failed: {ex.Message}");
+                Console.WriteLine($"\nAPI key validation failed: {ex.Message}");
+                throw;
             }
         }
 
@@ -109,7 +144,7 @@ namespace CsvTranslator
             string outputFile,
             string columnName,
             List<TranslationType> translationTypes,
-            bool isProperNoun = false,  // New paramete
+            bool isProperNoun = false,
             int skipRows = 0,
             int outputBatchSize = 1000,
             int processingBatchSize = 50,
@@ -307,6 +342,75 @@ namespace CsvTranslator
 
         private async Task<string> TranslateTextAsync(string text, TranslationType translationType, bool isProperNoun)
         {
+            //if (isProperNoun && (translationType is TranslationType.Japanese or TranslationType.Hiragana or TranslationType.Katakana))
+            //{
+            //    return _transliterator.Transliterate(text);
+            //}
+            
+            if (isProperNoun && (translationType is TranslationType.Japanese or TranslationType.Hiragana or TranslationType.Katakana))
+            {
+                var katakana = _transliterator.Transliterate(text);
+                
+                return translationType switch
+                {
+                    TranslationType.Hiragana => _japaneseProcessor.ToHiragana(katakana),
+                    _ => katakana // For Japanese and Katakana, keep as Katakana
+                };
+            }
+
+            // Rest of the translation code remains the same...
+
+            // First, get the basic translation
+            var targetLang = _targetLanguages[translationType];
+            
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("text", text),
+                new KeyValuePair<string, string>("target_lang", targetLang),
+                new KeyValuePair<string, string>("source_lang", "EN"),
+                new KeyValuePair<string, string>("preserve_formatting", "1")
+            });
+
+            try
+            {
+                var response = await _httpClient.PostAsync(_apiUrl, content);
+                
+                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new Exception($"Authentication failed: {errorContent}");
+                }
+                
+                response.EnsureSuccessStatusCode();
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(jsonResponse);
+                var translatedText = doc.RootElement
+                    .GetProperty("translations")[0]
+                    .GetProperty("text")
+                    .GetString() ?? string.Empty;
+
+                // For proper nouns in Japanese-related translations, convert to appropriate script
+                if (isProperNoun && translationType is TranslationType.Japanese or TranslationType.Katakana)
+                {
+                    return _japaneseProcessor.ToKatakana(translatedText);  // Convert to Katakana as it's a proper noun
+                }
+                else if (isProperNoun && translationType == TranslationType.Hiragana)
+                {
+                    return _japaneseProcessor.ToHiragana(translatedText);
+                }
+
+                return translatedText;
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.WriteLine($"API Request Error: {ex.Message}");
+                throw;
+            }
+        }
+
+        /*
+        private async Task<string> TranslateTextAsync(string text, TranslationType translationType, bool isProperNoun)
+        {
             // For proper nouns, directly transliterate for Japanese-related translations
             if (isProperNoun && (translationType == TranslationType.Japanese || 
                                 translationType == TranslationType.Hiragana || 
@@ -364,6 +468,7 @@ namespace CsvTranslator
                 throw;
             }
         }
+        */
 
         /* old method
         private async Task<string> TranslateTextAsync(string text, TranslationType translationType)
@@ -418,13 +523,39 @@ namespace CsvTranslator
 
         private void ValidateColumn(CsvReader csv, string columnName)
         {
-            csv.Read();
-            csv.ReadHeader();
-            var hasColumn = csv.HeaderRecord!.Any(h => h.Equals(columnName, StringComparison.OrdinalIgnoreCase));
-            
-            if (!hasColumn)
+            try
             {
-                throw new ArgumentException($"Column '{columnName}' not found in CSV file.");
+                csv.Read();
+                csv.ReadHeader();
+                
+                // Get all headers and check if the column exists (case-insensitive)
+                var headers = csv.HeaderRecord ?? Array.Empty<string>();
+                var hasColumn = headers.Any(h => h.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+                
+                if (!hasColumn)
+                {
+                    throw new ArgumentException($"Column '{columnName}' not found in CSV file. Available columns: {string.Join(", ", headers)}");
+                }
+
+                // Check for duplicate headers
+                var duplicates = headers
+                    .GroupBy(h => h, StringComparer.OrdinalIgnoreCase)
+                    .Where(g => g.Count() > 1)
+                    .Select(g => g.Key);
+
+                if (duplicates.Any())
+                {
+                    Console.WriteLine($"Warning: Found duplicate column headers: {string.Join(", ", duplicates)}");
+                    Console.WriteLine("This may cause issues with the translation process.");
+                }
+            }
+            catch (HeaderValidationException ex)
+            {
+                throw new Exception($"Error validating CSV headers: {ex.Message}");
+            }
+            catch (Exception ex) when (ex is not ArgumentException)
+            {
+                throw new Exception($"Error reading CSV file: {ex.Message}");
             }
         }
     }

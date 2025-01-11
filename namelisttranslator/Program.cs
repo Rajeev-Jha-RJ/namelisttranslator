@@ -15,7 +15,7 @@ namespace CsvTranslator
                 Console.WriteLine("- For Pro API: No specific prefix/suffix required");
                 Console.Write("\nAPI Key: ");
                 
-                var apiKey = Console.ReadLine()?.Trim();
+                var apiKey = "d41da4c9-b6d2-4abb-9f76-9fb976ccdd2e"; //Console.ReadLine()?.Trim();
                 
                 if (string.IsNullOrEmpty(apiKey))
                 {
@@ -25,6 +25,7 @@ namespace CsvTranslator
                 var translator = new TranslationService(apiKey);
                 await translator.ValidateApiKeyAsync();
 
+                
                 string inputFile;
                 do
                 {
@@ -146,7 +147,7 @@ namespace CsvTranslator
                     outputBatchSize: outputBatchSize,
                     processingBatchSize: processingBatchSize,
                     includeJapaneseExtras: includeJapaneseExtras);
-
+                
                 // Final quota check
                 await translator.CheckQuotaAsync();
 
