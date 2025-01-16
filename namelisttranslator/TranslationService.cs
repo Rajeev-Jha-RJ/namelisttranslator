@@ -159,8 +159,6 @@ namespace CsvTranslator
             int delayBetweenBatchesMs = 1000,
             ProperNounHandling properNounHandling = ProperNounHandling.Transliterate)
         {
-            Console.WriteLine($"isProperNoun: {isProperNoun}| properNounHandling: {properNounHandling}|");
-
             var records = new List<dynamic>();
             var errorRows = new List<(int RowNumber, string Error)>();
             var config = new CsvConfiguration(CultureInfo.InvariantCulture)
